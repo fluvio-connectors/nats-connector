@@ -1,0 +1,137 @@
+name: CI
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - staging
+      - trying
+  pull_request:
+    branches: [main]
+    paths:
+      - "**"
+      - "!/*.md"
+      - "!/**.md"
+
+jobs:
+  check:
+    name: Rust Check - ${{ matrix.check }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+        rust-target: [x86_64-unknown-linux-gnu]
+        check: [test, check, fmt, clippy]
+    env:
+      RUST_BACKTRACE: full
+      RUSTV: ${{ matrix.rust }}
+      TARGET: ${{ matrix.rust-target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust-target }}-${{ matrix.check }}
+      - name: Cargo test
+        if: ${{ matrix.check == 'test' }}
+        run: |
+          cargo test
+      - name: Cargo check
+        if: ${{ matrix.check == 'check' }}
+        run: |
+          cargo check --all-targets
+
+      - name: Cargo fmt
+        if: ${{ matrix.check == 'fmt' }}
+        run: cargo fmt -- --check
+
+      - name: Cargo clippy
+        if: ${{ matrix.check == 'clippy' }}
+        run: cargo clippy --all-targets -- -D warnings
+
+  integration_tests:
+    name: Integration testing on - ${{ matrix.os }} for ${{ matrix.connector-name }} connector.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+        connector-name:
+          - http-source
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - uses: actions/checkout@v4
+      - uses: AbsaOSS/k3d-action@v2.4.0
+        name: "Create fluvio k3d Cluster"
+        with:
+          cluster-name: "fluvio"
+          args: --timeout 5m
+      - name: Ensure k3d cluster is ready
+        run: |
+          sleep 5
+          ./actions/k3d-check.sh
+      - name: Install Fluvio Local Cluster
+        timeout-minutes: 10
+        uses: infinyon/fluvio@master
+        with:
+          cluster-type: k3d
+          version: stable
+      - name: Check Fluvio Installation
+        run: make test_fluvio_install
+
+      - name: Install Fluvio SMDK
+        run: fluvio install smdk
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Install Rust ${{ matrix.rust }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: wasm32-unknown-unknown
+      - name: Add wasm
+        run: rustup target add wasm32-unknown-unknown
+      - name: Setup BATS
+        uses: mig4/setup-bats@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust-target }}-${{ matrix.connector-name }}
+      - name: Test
+        timeout-minutes: 20
+        run: make test
+      - name: Run diagnostics
+        if: ${{ !success() }}
+        timeout-minutes: 5
+        run: fluvio cluster diagnostics
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v3
+        timeout-minutes: 5
+        if: ${{ !success() }}
+        with:
+          name: integration_${{ matrix.connector-name }}
+          path: diagnostics*.gz
+          retention-days: 5
+
+  done:
+    name: Done
+    needs:
+      - check
+      - integration_tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Done
+        run: echo "Done!"
+
