@@ -19,8 +19,7 @@ pub enum NatsEventError {
 impl TryFrom<NatsEvent> for String {
     type Error = NatsEventError;
     fn try_from(event: NatsEvent) -> Result<Self, NatsEventError> {
-        serde_json::to_string(&event)
-            .map_err(|e| NatsEventError::InternalConversion(e.to_string()))
+        serde_json::to_string(&event).map_err(|e| NatsEventError::InternalConversion(e.to_string()))
     }
 }
 

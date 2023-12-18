@@ -4,7 +4,7 @@ use async_std::channel::{self, Sender};
 use async_std::task::spawn;
 use async_trait::async_trait;
 use fluvio::Offset;
-use fluvio_connector_common::tracing::info;
+use fluvio_connector_common::tracing::{info, trace};
 use fluvio_connector_common::Source;
 use futures::{stream::LocalBoxStream, StreamExt};
 
@@ -48,7 +48,7 @@ async fn nats_loop(tx: Sender<String>, nats_host: String, nats_subject: String) 
         );
 
         while let Some(msg) = nats_subscription.next().await {
-            info!("Nats got: {:?}", msg);
+            trace!("Nats got: {msg:?}");
             let nats_event: NatsEvent = msg.into();
             tx.send(nats_event.try_into()?).await?;
         }
