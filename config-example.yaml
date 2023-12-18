@@ -3,7 +3,6 @@ meta:
   name: my-nats-connector
   type: nats-source
   topic: nats-topic
-  create-topic: true
 nats:  
   host: "localhost"
   subject: "my.subject.tofluvio"
