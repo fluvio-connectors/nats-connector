@@ -4,11 +4,9 @@ use async_std::channel::{self, Sender};
 use async_std::task::spawn;
 use async_trait::async_trait;
 use fluvio::Offset;
-//use fluvio::{dataplane::record::{Record, RecordData}, Offset, RecordKey};
 use fluvio_connector_common::tracing::info;
 use fluvio_connector_common::Source;
 use futures::{stream::LocalBoxStream, StreamExt};
-use nats::asynk::Subscription as NatsSubscription;
 
 const CHANNEL_BUFFER_SIZE: usize = 10000;
 
@@ -30,35 +28,29 @@ impl<'a> Source<'a, String> for NatsSource {
     async fn connect(self, _offset: Option<Offset>) -> Result<LocalBoxStream<'a, String>> {
         info!("Nats host: {} subject {}", &self.host, &self.subject);
 
-        let nats_client = nats::asynk::connect(self.host).await?;
-        let nats_subscription = nats_client.subscribe(&self.subject).await?;
-
-        info!(
-            "Nats client_id {} ip {}",
-            nats_client.client_id(),
-            nats_client.client_ip().unwrap()
-        );
-
         let (sender, receiver) = channel::bounded(CHANNEL_BUFFER_SIZE);
-        spawn(nats_loop(sender, nats_client, nats_subscription));
+        spawn(nats_loop(sender, self.host, self.subject));
         Ok(receiver.boxed_local())
     }
 }
 
-use nats::asynk::Connection as NatsConnection;
-
-async fn nats_loop(
-    tx: Sender<String>,
-    _nats_client: NatsConnection,
-    nats_sub: NatsSubscription,
-) -> Result<()> {
+async fn nats_loop(tx: Sender<String>, nats_host: String, nats_subject: String) -> Result<()> {
     info!("Nats loop started");
 
     loop {
-        while let Some(msg) = nats_sub.next().await {
+        let nats_client = nats::asynk::connect(&nats_host).await?;
+        let nats_subscription = nats_client.subscribe(&nats_subject).await?;
+
+        info!(
+            "Nats connnecting client_id {} ip {}",
+            nats_client.client_id(),
+            nats_client.client_ip()?
+        );
+
+        while let Some(msg) = nats_subscription.next().await {
             info!("Nats got: {:?}", msg);
             let nats_event: NatsEvent = msg.into();
-            tx.send(nats_event.into()).await?;
+            tx.send(nats_event.try_into()?).await?;
         }
     }
 }

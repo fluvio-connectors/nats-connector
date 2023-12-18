@@ -1,5 +1,6 @@
 use nats::asynk::Message as NatsMessage;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NatsEvent {
@@ -9,9 +10,17 @@ pub(crate) struct NatsEvent {
     pub nats_data: Vec<u8>,
 }
 
-impl From<NatsEvent> for String {
-    fn from(event: NatsEvent) -> Self {
-        serde_json::to_string(&event).unwrap()
+#[derive(Error, Debug)]
+pub enum NatsEventError {
+    #[error("Internal failure to convert Nats Event to JSON String: {0}")]
+    InternalConversion(String),
+}
+
+impl TryFrom<NatsEvent> for String {
+    type Error = NatsEventError;
+    fn try_from(event: NatsEvent) -> Result<Self, NatsEventError> {
+        serde_json::to_string(&event)
+            .map_err(|e| NatsEventError::InternalConversion(e.to_string()))
     }
 }
 
