@@ -1,0 +1,10 @@
+meta:
+  version: latest
+  name: my-nats-connector
+  type: nats-source
+  topic: nats-topic
+nats:  
+  host: "localhost"
+  subject: "my.subject.tofluvio"
+
+
